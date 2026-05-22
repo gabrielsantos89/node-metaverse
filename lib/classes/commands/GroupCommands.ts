@@ -54,8 +54,8 @@ export class GroupCommands extends CommandsBase
     // - sem attachment → buffer com 1 byte nulo (viewer oficial)
     // - com attachment → LLSD XML serializado
     const binaryBucket: Buffer = attachment
-        ? attachment.serialize()
-        : Buffer.from([0x00]);
+    ? Buffer.from(attachment.serialize())
+    : Buffer.from([0x00]);
 
     im.AgentData = {
         AgentID: this.agent.agentID,
