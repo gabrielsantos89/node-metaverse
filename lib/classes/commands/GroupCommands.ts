@@ -20,42 +20,68 @@ import { GroupBanAction } from '../../enums/GroupBanAction';
 import { GroupBan } from '../GroupBan';
 import type { GroupInviteEvent } from '../../events/GroupInviteEvent';
 import type { GroupProfileReplyEvent } from '../../events/GroupProfileReplyEvent';
+import { GroupNoticeAttachment } from '../GroupNoticeAttachment';
 
 export class GroupCommands extends CommandsBase
 {
-    public async sendGroupNotice(groupID: UUID | string, subject: string, message: string): Promise<void>
+    public async sendGroupNotice(
+    groupID: UUID | string, 
+    subject: string, 
+    message: string, 
+    attachment?: GroupNoticeAttachment
+): Promise<void>
+{
+    if (typeof groupID === 'string')
     {
-        if (typeof groupID === 'string')
-        {
-            groupID = new UUID(groupID);
-        }
-        const {circuit} = this;
-        const agentName = this.agent.firstName + ' ' + this.agent.lastName;
-        const im: ImprovedInstantMessageMessage = new ImprovedInstantMessageMessage();
-        im.AgentData = {
-            AgentID: this.agent.agentID,
-            SessionID: circuit.sessionID
-        };
-        im.MessageBlock = {
-            FromGroup: false,
-            ToAgentID: groupID,
-            ParentEstateID: 0,
-            RegionID: UUID.zero(),
-            Position: Vector3.getZero(),
-            Offline: 0,
-            Dialog: InstantMessageDialog.GroupNotice,
-            ID: UUID.zero(),
-            Timestamp: 0,
-            FromAgentName: Utils.StringToBuffer(agentName),
-            Message: Utils.StringToBuffer(subject + '|' + message),
-            BinaryBucket: Buffer.allocUnsafe(0)
-        };
-        im.EstateBlock = {
-            EstateID: 0
-        };
-        const sequenceNo = circuit.sendMessage(im, PacketFlags.Reliable);
-        await circuit.waitForAck(sequenceNo, 10000);
+        groupID = new UUID(groupID);
     }
+
+    // Validações de tamanho conforme limites do SL
+    if (Buffer.byteLength(subject, 'utf-8') > 63)
+    {
+        throw new Error('Group notice subject exceeds 63-byte limit');
+    }
+    if (Buffer.byteLength(message, 'utf-8') > 512)
+    {
+        throw new Error('Group notice message exceeds 512-byte limit');
+    }
+
+    const {circuit} = this;
+    const agentName = this.agent.firstName + ' ' + this.agent.lastName;
+    const im: ImprovedInstantMessageMessage = new ImprovedInstantMessageMessage();
+
+    // Monta o BinaryBucket:
+    // - sem attachment → buffer com 1 byte nulo (viewer oficial)
+    // - com attachment → LLSD XML serializado
+    const binaryBucket: Buffer = attachment
+        ? attachment.serialize()
+        : Buffer.from([0x00]);
+
+    im.AgentData = {
+        AgentID: this.agent.agentID,
+        SessionID: circuit.sessionID
+    };
+    im.MessageBlock = {
+        FromGroup: false,
+        ToAgentID: groupID,
+        ParentEstateID: 0,
+        RegionID: UUID.zero(),
+        Position: Vector3.getZero(),
+        Offline: 0,
+        Dialog: InstantMessageDialog.GroupNotice,
+        ID: UUID.zero(),
+        Timestamp: Math.floor(Date.now() / 1000),
+        FromAgentName: Utils.StringToBuffer(agentName),
+        Message: Utils.StringToBuffer(subject + '|' + message),
+        BinaryBucket: binaryBucket
+    };
+    im.EstateBlock = {
+        EstateID: 0
+    };
+
+    const sequenceNo = circuit.sendMessage(im, PacketFlags.Reliable);
+    await circuit.waitForAck(sequenceNo, 10000);
+}
 
     public async sendGroupInviteBulk(groupID: UUID | string, sendTo: {
         avatarID: UUID | string,

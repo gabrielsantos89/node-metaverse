@@ -225,19 +225,31 @@ export class ObjectStoreLite implements IObjectStore
                                         override.doubleSided = doubleSided;
                                     }
 
-                                    if (textureTransforms !== undefined && Array.isArray(textureTransforms))
-                                    {
+                                    if (textureTransforms !== undefined && Array.isArray(textureTransforms)) {
                                         override.textureTransforms = [];
-                                        for (const transform of textureTransforms)
-                                        {
-                                            const o = transform.get('o') as LLSDReal[] | undefined;
-                                            const s = transform.get('s') as LLSDReal[] | undefined;
-                                            const r = transform.get('r') as LLSDReal | undefined;
-                                            const tObj = {
-                                                offset: o !== undefined ? LLSDArray.toNumberArray(o) : undefined,
-                                                scale: s !== undefined ? LLSDArray.toNumberArray(s) : undefined,
-                                                rotation: r !== undefined ? r.valueOf() : undefined
+                                        for (const transform of textureTransforms) {
+                                            if (!(transform instanceof LLSDMap)) continue; 
+                                            
+                                            const o = transform.get('o');
+                                            const s = transform.get('s');
+                                            const r = transform.get('r');
+                                            
+                                            const tObj: any = {};
+                                            
+                                            // Array.isArray já retorna false caso 'o' ou 's' sejam null ou undefined
+                                            if (Array.isArray(o)) {
+                                                tObj.offset = LLSDArray.toNumberArray(o);
                                             }
+                                            
+                                            if (Array.isArray(s)) {
+                                                tObj.scale = LLSDArray.toNumberArray(s);
+                                            }
+                                            
+                                            // Para a rotação, garantimos que não é null nem undefined antes de chamar valueOf()
+                                            if (r !== undefined && r !== null) {
+                                                tObj.rotation = r.valueOf();
+                                            }
+                                            
                                             override.textureTransforms.push(tObj);
                                         }
                                     }
