@@ -12,7 +12,7 @@ export class GroupNoticeAttachment
     /** UUID do item no inventário do bot */
     public itemID: UUID;
 
-    /** UUID do dono do item (normalmente o agentID do bot) */
+    /** UUID do dono do item — deve ser o owner conforme LLInventoryItem::getPermissions().getOwner() */
     public ownerID: UUID;
 
     /** Nome do item (exibido na notice para o receptor) */
@@ -20,15 +20,9 @@ export class GroupNoticeAttachment
 
     /**
      * AssetType numérico conforme enum do SL:
-     *   0  = Texture
-     *   3  = Landmark
-     *   5  = Object
-     *   7  = Notecard
-     *   10 = Script
-     *   13 = Bodypart
-     *   18 = Sound
-     *   20 = Animation
-     *   24 = Gesture
+     * 0  = Texture   |  3  = Landmark  |  5  = Object
+     * 7  = Notecard  |  10 = Script    |  18 = Sound
+     * 20 = Animation |  24 = Gesture
      */
     public assetType: number;
 
@@ -41,46 +35,34 @@ export class GroupNoticeAttachment
     }
 
     /**
-     * Serializa o attachment no formato binário nativo do SL viewer,
-     * esperado pelo campo BinaryBucket do pacote ImprovedInstantMessage.
+     * Serializa o attachment no formato EXATO produzido pelo viewer oficial.
      *
-     * Layout do buffer (referência: SL viewer → llgroupmgr.cpp → sendGroupNotice):
-     *
-     *   Offset  Size     Field
-     *   ------  ----     -----
-     *   0       1 byte   has_attachment   (U8, always 1)
-     *   1       1 byte   asset_type       (U8)
-     *   2       16 bytes item_id          (UUID as raw bytes, no hyphens)
-     *   18      16 bytes owner_id         (UUID as raw bytes, no hyphens)
-     *   34      N bytes  item_name        (UTF-8 null-terminated string)
-     *
-     * ATENÇÃO: O simulador do SL rejeita LLSD XML neste campo com o erro
-     * "CantParceInventoryInNotice". Apenas o formato binário acima é aceito.
-     *
-     * NOTA TYPESCRIPT: o retorno é Uint8Array<ArrayBuffer> (não Buffer) para
-     * satisfazer o tipo de BinaryBucket da lib. Buffer tem ArrayBufferLike como
-     * tipo do .buffer (inclui SharedArrayBuffer), o que quebra a assignabilidade
-     * quando o campo espera Uint8Array<ArrayBuffer> estritamente.
+     * Fonte primária: ApertureViewer → indra/newview/llviewermessage.cpp:7815-7824
      */
     public serialize(): Uint8Array
     {
-        // Buffer.from() é usado apenas para conversões de string/hex (não atribuído ao campo).
-        // O bucket principal é new Uint8Array() puro, garantindo ArrayBuffer concreto.
-        const nameBytes  = Buffer.from(this.name + '\x00', 'utf-8');
-        const itemBytes  = Buffer.from(this.itemID.toString().replace(/-/g, ''),  'hex'); // 16 bytes
-        const ownerBytes = Buffer.from(this.ownerID.toString().replace(/-/g, ''), 'hex'); // 16 bytes
+        const item_id  = this.itemID.toString();
+        const owner_id = this.ownerID.toString();
 
-        const bucket = new Uint8Array(2 + 16 + 16 + nameBytes.length);
-        let off = 0;
+        // Replica byte-a-byte o output de LLSDSerialize::serialize(..., LLSD_XML)
+        const xml =
+            '<? LLSD/XML ?>\n' +
+            '<llsd><map>' +
+            '<key>item_id</key><uuid>'  + item_id  + '</uuid>' +
+            '<key>owner_id</key><uuid>' + owner_id + '</uuid>' +
+            '</map></llsd>\n';
 
-        bucket[off++] = 1;               // has_attachment = 1
-        bucket[off++] = this.assetType;  // asset_type
+        const xmlBytes = Buffer.from(xml, 'utf-8');
+        
+        // Cria um Uint8Array puro com o tamanho exato (XML + 1 byte para o null-terminator)
+        const result = new Uint8Array(xmlBytes.length + 1);
+        
+        // Usa o .set() nativo do Uint8Array, contornando a tipagem restrita do Buffer.copy()
+        result.set(xmlBytes, 0);
+        
+        // Adiciona o null-terminator no último byte
+        result[xmlBytes.length] = 0x00;
 
-        // .set() aceita qualquer ArrayLike<number>, incluindo Buffer (subclasse de Uint8Array)
-        bucket.set(itemBytes,  off); off += 16; // item_id  (16 bytes, raw UUID)
-        bucket.set(ownerBytes, off); off += 16; // owner_id (16 bytes, raw UUID)
-        bucket.set(nameBytes,  off);             // item_name (null-terminated)
-
-        return bucket;
+        return result;
     }
 }
