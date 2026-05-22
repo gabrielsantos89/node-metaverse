@@ -24,10 +24,15 @@ import { GroupNoticeAttachment } from '../GroupNoticeAttachment';
 
 export class GroupCommands extends CommandsBase
 {
-    public async sendGroupNotice(
-    groupID: UUID | string, 
-    subject: string, 
-    message: string, 
+    // ─────────────────────────────────────────────────────────────────────────────
+// PATCH DE DEBUG — substitua o método sendGroupNotice em GroupCommands.ts
+// pelo trecho abaixo. Remova os blocos [DEBUG] após confirmar o funcionamento.
+// ─────────────────────────────────────────────────────────────────────────────
+
+public async sendGroupNotice(
+    groupID: UUID | string,
+    subject: string,
+    message: string,
     attachment?: GroupNoticeAttachment
 ): Promise<void>
 {
@@ -36,7 +41,6 @@ export class GroupCommands extends CommandsBase
         groupID = new UUID(groupID);
     }
 
-    // Validações de tamanho conforme limites do SL
     if (Buffer.byteLength(subject, 'utf-8') > 63)
     {
         throw new Error('Group notice subject exceeds 63-byte limit');
@@ -46,38 +50,71 @@ export class GroupCommands extends CommandsBase
         throw new Error('Group notice message exceeds 512-byte limit');
     }
 
-    const {circuit} = this;
+    const { circuit } = this;
     const agentName = this.agent.firstName + ' ' + this.agent.lastName;
+
+    // Monta o BinaryBucket
+    let binaryBucket: Buffer;
+    if (attachment)
+    {
+        const raw = attachment.serialize();
+        binaryBucket = Buffer.from(raw); // Uint8Array → Buffer concreto
+
+        // ─── [DEBUG] DUMP DO BINARY BUCKET DENTRO DA LIB ─────────────────────
+        const hexSpaced = binaryBucket.toString('hex').match(/.{1,2}/g)!.join(' ');
+        const nameEnd   = binaryBucket.indexOf(0, 34);
+        console.log(`\n[GroupNotice DEBUG] ── BinaryBucket na lib (${binaryBucket.length} bytes) ──`);
+        console.log(`[GroupNotice DEBUG]   hex          : ${hexSpaced}`);
+        console.log(`[GroupNotice DEBUG]   [00] has_att : ${binaryBucket[0]}`);
+        console.log(`[GroupNotice DEBUG]   [01] type    : ${binaryBucket[1]}`);
+        console.log(`[GroupNotice DEBUG]   [02-11] item : ${binaryBucket.slice(2, 18).toString('hex')}`);
+        console.log(`[GroupNotice DEBUG]   [12-21] own  : ${binaryBucket.slice(18, 34).toString('hex')}`);
+        console.log(`[GroupNotice DEBUG]   [22..] name  : "${binaryBucket.slice(34, nameEnd > 0 ? nameEnd : undefined).toString('utf-8')}"`);
+        // ─────────────────────────────────────────────────────────────────────
+    }
+    else
+    {
+        binaryBucket = Buffer.from([0x00]);
+    }
+
     const im: ImprovedInstantMessageMessage = new ImprovedInstantMessageMessage();
 
-    // Monta o BinaryBucket:
-    // - sem attachment → buffer com 1 byte nulo (viewer oficial)
-    // - com attachment → LLSD XML serializado
-    const binaryBucket: Buffer = attachment
-    ? Buffer.from(attachment.serialize())
-    : Buffer.from([0x00]);
-
     im.AgentData = {
-        AgentID: this.agent.agentID,
+        AgentID:   this.agent.agentID,
         SessionID: circuit.sessionID
     };
+
+    const messagePayload = subject + '|' + message;
+
     im.MessageBlock = {
-        FromGroup: false,
-        ToAgentID: groupID,
+        FromGroup:      false,
+        ToAgentID:      groupID,
         ParentEstateID: 0,
-        RegionID: UUID.zero(),
-        Position: Vector3.getZero(),
-        Offline: 0,
-        Dialog: InstantMessageDialog.GroupNotice,
-        ID: UUID.zero(),
-        Timestamp: Math.floor(Date.now() / 1000),
-        FromAgentName: Utils.StringToBuffer(agentName),
-        Message: Utils.StringToBuffer(subject + '|' + message),
-        BinaryBucket: binaryBucket
+        RegionID:       UUID.zero(),
+        Position:       Vector3.getZero(),
+        Offline:        0,
+        Dialog:         InstantMessageDialog.GroupNotice,
+        ID:             UUID.zero(),
+        Timestamp:      Math.floor(Date.now() / 1000),
+        FromAgentName:  Utils.StringToBuffer(agentName),
+        Message:        Utils.StringToBuffer(messagePayload),
+        BinaryBucket:   binaryBucket
     };
+
     im.EstateBlock = {
         EstateID: 0
     };
+
+    // ─── [DEBUG] DUMP DO PACOTE COMPLETO ANTES DE ENVIAR ─────────────────────
+    console.log(`\n[GroupNotice DEBUG] ── Pacote ImprovedInstantMessage ──`);
+    console.log(`[GroupNotice DEBUG]   AgentID      : ${this.agent.agentID.toString()}`);
+    console.log(`[GroupNotice DEBUG]   ToAgentID    : ${groupID.toString()}`);
+    console.log(`[GroupNotice DEBUG]   Dialog       : ${InstantMessageDialog.GroupNotice} (GroupNotice=20)`);
+    console.log(`[GroupNotice DEBUG]   FromAgentName: "${agentName}"`);
+    console.log(`[GroupNotice DEBUG]   Message      : "${messagePayload}"`);
+    console.log(`[GroupNotice DEBUG]   BinaryBucket : ${binaryBucket.toString('hex')}`);
+    console.log(`[GroupNotice DEBUG]   BucketLength : ${binaryBucket.length}`);
+    // ─────────────────────────────────────────────────────────────────────────
 
     const sequenceNo = circuit.sendMessage(im, PacketFlags.Reliable);
     await circuit.waitForAck(sequenceNo, 10000);
