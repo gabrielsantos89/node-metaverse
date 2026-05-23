@@ -24,11 +24,6 @@ import { GroupNoticeAttachment } from '../GroupNoticeAttachment';
 
 export class GroupCommands extends CommandsBase
 {
-    // ─────────────────────────────────────────────────────────────────────────────
-// PATCH DE DEBUG — substitua o método sendGroupNotice em GroupCommands.ts
-// pelo trecho abaixo. Remova os blocos [DEBUG] após confirmar o funcionamento.
-// ─────────────────────────────────────────────────────────────────────────────
-
 public async sendGroupNotice(
     groupID: UUID | string,
     subject: string,
@@ -53,23 +48,11 @@ public async sendGroupNotice(
     const { circuit } = this;
     const agentName = this.agent.firstName + ' ' + this.agent.lastName;
 
-    // Monta o BinaryBucket
     let binaryBucket: Buffer;
     if (attachment)
     {
         const raw = attachment.serialize();
-        binaryBucket = Buffer.from(raw); // Uint8Array → Buffer concreto
-
-        // ─── [DEBUG] DUMP DO BINARY BUCKET DENTRO DA LIB ─────────────────────
-        const hexSpaced = binaryBucket.toString('hex').match(/.{1,2}/g)!.join(' ');
-        const nameEnd   = binaryBucket.indexOf(0, 34);
-        console.log(`\n[GroupNotice DEBUG] ── BinaryBucket na lib (${binaryBucket.length} bytes) ──`);
-        console.log(`[GroupNotice DEBUG]   hex          : ${hexSpaced}`);
-        console.log(`[GroupNotice DEBUG]   [00] has_att : ${binaryBucket[0]}`);
-        console.log(`[GroupNotice DEBUG]   [01] type    : ${binaryBucket[1]}`);
-        console.log(`[GroupNotice DEBUG]   [02-11] item : ${binaryBucket.slice(2, 18).toString('hex')}`);
-        console.log(`[GroupNotice DEBUG]   [12-21] own  : ${binaryBucket.slice(18, 34).toString('hex')}`);
-        console.log(`[GroupNotice DEBUG]   [22..] name  : "${binaryBucket.slice(34, nameEnd > 0 ? nameEnd : undefined).toString('utf-8')}"`);
+        binaryBucket = Buffer.from(raw);
         // ─────────────────────────────────────────────────────────────────────
     }
     else
@@ -104,17 +87,6 @@ public async sendGroupNotice(
     im.EstateBlock = {
         EstateID: 0
     };
-
-    // ─── [DEBUG] DUMP DO PACOTE COMPLETO ANTES DE ENVIAR ─────────────────────
-    console.log(`\n[GroupNotice DEBUG] ── Pacote ImprovedInstantMessage ──`);
-    console.log(`[GroupNotice DEBUG]   AgentID      : ${this.agent.agentID.toString()}`);
-    console.log(`[GroupNotice DEBUG]   ToAgentID    : ${groupID.toString()}`);
-    console.log(`[GroupNotice DEBUG]   Dialog       : ${InstantMessageDialog.GroupNotice} (GroupNotice=20)`);
-    console.log(`[GroupNotice DEBUG]   FromAgentName: "${agentName}"`);
-    console.log(`[GroupNotice DEBUG]   Message      : "${messagePayload}"`);
-    console.log(`[GroupNotice DEBUG]   BinaryBucket : ${binaryBucket.toString('hex')}`);
-    console.log(`[GroupNotice DEBUG]   BucketLength : ${binaryBucket.length}`);
-    // ─────────────────────────────────────────────────────────────────────────
 
     const sequenceNo = circuit.sendMessage(im, PacketFlags.Reliable);
     await circuit.waitForAck(sequenceNo, 10000);
